@@ -91,7 +91,7 @@ fn read_directory(base_path: &Path, current_path: &Path, elements: &mut HashMap<
                         };
                         elements.insert(key, processed_content);
                     }
-                    _ => {} // Ignore files with other extensions
+                    _ => {} 
                 }
             }
         }
@@ -105,12 +105,10 @@ fn generate_key(base_path: &Path, path: &Path) -> String {
 
     match maybe_parent {
         Some(parent) if parent != Path::new("") => {
-            // There is a parent directory, and it's not the base path itself
             let parent_str = parent.to_str().unwrap().replace("/", "-").replace("\\", "-");
             format!("{}-{}", parent_str, file_stem)
         },
         _ => {
-            // Either there's no parent, or the parent is the base directory itself
             file_stem.to_owned()
         }
     }
