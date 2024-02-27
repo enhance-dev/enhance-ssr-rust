@@ -5,6 +5,7 @@ use std::fs;
 use serde::{Serialize, Deserialize};
 use serde_json::json;
 use std::sync::Arc;
+use std::path::Path;
 
 #[derive(Serialize, Deserialize)]
 struct InitialState {
@@ -22,7 +23,7 @@ async fn main() {
     };
 
     let data = json!({
-        "markup": "<my-header>Hello World</my-header>",
+        "markup": "<my-header>Hello World</my-header><nest-my-header>nested</nest-my-header><another-header>another</another-header><more-header>more</more-header><most-header>most</most-header>",
         "initialState": initial_state,
         "elements": elements,
     });
@@ -52,27 +53,6 @@ async fn main() {
 }
 
 
-fn read_elements(directory: &str) -> HashMap<String, String> {
-    let mut elements = HashMap::new();
-    let paths = fs::read_dir(directory).unwrap_or_else(|err| {
-        panic!("Error reading directory: {}", err);
-    });
-
-    for path in paths {
-        let path = path.unwrap().path();
-        if path.is_file() {
-            let content = fs::read_to_string(&path).unwrap_or_else(|err| {
-                panic!("Error reading file {:?}: {}", path, err);
-            });
-            let file_stem = path.file_stem().unwrap().to_str().unwrap().to_owned();
-            elements.insert(file_stem, content);
-        }
-    }
-
-    elements
-}
-
-
 fn enhance(data: &serde_json::Value) -> serde_json::Value {
   let enhance_wasm = Wasm::file( "./wasm/enhance-ssr.wasm");
   let manifest = Manifest::new([enhance_wasm]);
@@ -84,3 +64,54 @@ fn enhance(data: &serde_json::Value) -> serde_json::Value {
   serde_json::from_str(&res).expect("Failed to deserialize plugin response")
 }
 
+
+fn read_elements(directory: &str) -> HashMap<String, String> {
+    let mut elements = HashMap::new();
+    let base_path = Path::new(directory);
+    read_directory(base_path, base_path, &mut elements);
+    elements
+}
+
+fn read_directory(base_path: &Path, current_path: &Path, elements: &mut HashMap<String, String>) {
+    if let Ok(entries) = fs::read_dir(current_path) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                read_directory(base_path, &path, elements);
+            } else {
+                match path.extension().and_then(|s| s.to_str()) {
+                    Some("mjs") | Some("js") | Some("html") => {
+                        let content = fs::read_to_string(&path).unwrap_or_else(|err| {
+                            panic!("Error reading file {:?}: {}", path, err);
+                        });
+                        let key = generate_key(base_path, &path);
+                        let processed_content = match path.extension().and_then(|s| s.to_str()) {
+                            Some("html") => format!(r#"function ({{html, state}}){{return html`{}`}}"#, content),
+                            _ => content,
+                        };
+                        elements.insert(key, processed_content);
+                    }
+                    _ => {} // Ignore files with other extensions
+                }
+            }
+        }
+    }
+}
+
+fn generate_key(base_path: &Path, path: &Path) -> String {
+    let relative_path = path.strip_prefix(base_path).unwrap();
+    let maybe_parent = relative_path.parent();
+    let file_stem = path.file_stem().unwrap().to_str().unwrap();
+
+    match maybe_parent {
+        Some(parent) if parent != Path::new("") => {
+            // There is a parent directory, and it's not the base path itself
+            let parent_str = parent.to_str().unwrap().replace("/", "-").replace("\\", "-");
+            format!("{}-{}", parent_str, file_stem)
+        },
+        _ => {
+            // Either there's no parent, or the parent is the base directory itself
+            file_stem.to_owned()
+        }
+    }
+}
