@@ -16,7 +16,7 @@ struct InitialState {
 #[tokio::main]
 async fn main() {
 
-    let elements = read_elements("./elements"); 
+    let elements = read_elements("./elements");
     let initial_state = InitialState {
         message: "Hello from initialState".to_string(),
         count: 42,
@@ -30,9 +30,18 @@ async fn main() {
 
     let enhanced_json = enhance(&data);
     let document_html = enhanced_json["document"].as_str().unwrap_or_default().to_string();
+    let body_html = enhanced_json["body"].as_str().unwrap_or_default().to_string();
+    let style_css = enhanced_json["styles"].as_str().unwrap_or_default().to_string();
+
+    let body_owned: String = body_html.to_owned();
+    let style_owned: String = style_css.to_owned();
+
+    let together = format!("<html><head><link href='/static/index.css' rel='stylesheet'></link><style>{style_owned}</style></head><body>{body_owned}<script type='module' src='/static/index.js'></script></body></html>");
+    println!("{}", together);
 
     // Use Arc to share the HTML content across requests.
     let shared_document_html = Arc::new(document_html);
+    let constructed_document_html = Arc::new(together);
 
     // Define the route
     let hello_world = warp::path!("hello" / "world")
@@ -44,10 +53,29 @@ async fn main() {
             }
         });
 
+    let hello_constructed = warp::path!("hello" / "constructed")
+        .map({
+            let constructed_document_html = constructed_document_html.clone();
+            move || {
+                let response_html = constructed_document_html.clone();
+                warp::reply::html(response_html.to_string())
+            }
+        });
+
+
     // Start the server
     println!("Starting server on http://localhost:3030");
     println!("Enhanced page at http://localhost:3030/hello/world");
-    warp::serve(hello_world)
+    println!("Constructed Enhanced page at http://localhost:3030/hello/constructed");
+    let static_route = warp::path("static")
+        .and(warp::fs::dir("./www/static/"));
+    let routes = readme.or(static_route);
+    let routes = warp::get().and(
+        hello_world
+            .or(hello_constructed)
+            .or(static_route),
+    );
+    warp::serve(routes)
         .run(([127, 0, 0, 1], 3030))
         .await;
 }
@@ -91,7 +119,7 @@ fn read_directory(base_path: &Path, current_path: &Path, elements: &mut HashMap<
                         };
                         elements.insert(key, processed_content);
                     }
-                    _ => {} 
+                    _ => {}
                 }
             }
         }
