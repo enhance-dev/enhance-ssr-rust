@@ -69,7 +69,6 @@ async fn main() {
     println!("Constructed Enhanced page at http://localhost:3030/hello/constructed");
     let static_route = warp::path("static")
         .and(warp::fs::dir("./www/static/"));
-    let routes = readme.or(static_route);
     let routes = warp::get().and(
         hello_world
             .or(hello_constructed)
